@@ -76,7 +76,7 @@ def connect_mqtt():
 
 def publish_mqtt(topic, value):
     led.value(1)
-    message = PROBE_ID + ' ' + value
+    message = PROBE_ID + ': ' + value
     client.publish(topic, message)
     print(topic)
     print(message)
