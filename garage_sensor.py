@@ -42,6 +42,7 @@ GarageState = enum(DOOR_OPEN=1, CAR_INSIDE=2, GARAGE_EMPTY=3, UNKNOWN=4)
 
 def initialize_wifi(ssid, password):
     wlan = network.WLAN(network.STA_IF)
+    network.hostname(MQTT_CLIENT_ID)
     wlan.active(True)
     
     led.value(1)

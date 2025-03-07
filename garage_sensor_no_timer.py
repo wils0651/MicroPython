@@ -1,37 +1,35 @@
-from machine import Pin, I2C
-import time
+from machine import Pin, Timer, WDT
+from time import sleep
 import network
 import sys
 from umqtt.simple import MQTTClient
 import config
-from libraries.mcp9808 import MCP9808
+from hcsr04 import HCSR04
+
+led = Pin("LED", Pin.OUT)
+
+triggerPin = 5
+echoPin = 4
+hcsr = HCSR04(triggerPin, echoPin)
+
+measurements = []
 
 # MQTT Parameters
 MQTT_SERVER = config.mqtt_server
 MQTT_PORT = 0
 MQTT_USER = config.mqtt_username
 MQTT_PASSWORD = config.mqtt_password
-MQTT_CLIENT_ID = b"raspberrypi_picow"
+MQTT_CLIENT_ID = b"garage_picow"
 MQTT_KEEPALIVE = 7200
 MQTT_SSL = False   # set to False if using local MQTT broker
-MQTT_SSL_PARAMS = {'server_hostname': MQTT_SERVER}
 
-MQTT_TOPIC = 'esp8266_DHT'
-PROBE_ID = 'probe_3'
+MQTT_TOPIC = 'garage_sensor'
 
-led = Pin("LED", Pin.OUT)
-
-# Initialize I2C communication
-i2c = I2C(id=0, scl=Pin(5), sda=Pin(4), freq=10000)
-
-# create an instance of the sensor, giving it a reference to the I2C bus
-mcp = MCP9808(i2c)
-
-lastTempData = []
+THRESHOLD = 10 # cm
 
 def initialize_wifi(ssid, password):
-    network.hostname(PROBE_ID)
     wlan = network.WLAN(network.STA_IF)
+    network.hostname(MQTT_CLIENT_ID)
     wlan.active(True)
     
     led.value(1)
@@ -40,25 +38,24 @@ def initialize_wifi(ssid, password):
     wlan.connect(ssid, password)
 
     # Wait for Wi-Fi connection
-    connection_attempts = 10
-    while connection_attempts > 0:
+    connection_timeout = 10
+    while connection_timeout > 0:
         if wlan.status() >= 3:
             break
-        connection_attempts -= 1
-        print(f"Connecting to Wi-Fi. Attempts remaining: {connection_attempts}")
-        time.sleep(1)
+        connection_timeout -= 1
+        print('Acquiring Wi-Fi connection...')
+        sleep(1)
 
     # Check if connection is successful
     if wlan.status() != 3:
-        wlan.active(False)
         return False
     else:
-        print('Connected to WiFi')
+        print('Connection successful!')
         network_info = wlan.ifconfig()
         print('IP address:', network_info[0])
         led.value(0)
         return True
-
+    
 def connect_mqtt():
     try:
         client = MQTTClient(client_id=MQTT_CLIENT_ID,
@@ -67,8 +64,7 @@ def connect_mqtt():
                             user=MQTT_USER,
                             password=MQTT_PASSWORD,
                             keepalive=MQTT_KEEPALIVE,
-                            ssl=MQTT_SSL,
-                            ssl_params=MQTT_SSL_PARAMS)
+                            ssl=MQTT_SSL)
         client.connect()
         return client
     except Exception as e:
@@ -76,50 +72,55 @@ def connect_mqtt():
         raise  # Re-raise the exception to see the full traceback
 
 def publish_mqtt(topic, value):
-    led.value(1)
-    message = PROBE_ID + ': ' + value
-    client.publish(topic, message)
+    client.publish(topic, value)
     print(topic)
-    print(message)
-    print("Publish Done")
-    led.value(0)
+    print(value)
+    print("Published")
 
-def get_mean_temp():
-    return sum(lastTempData) / len(lastTempData)
+def should_publish(dist):
+    if len(measurements) < 5:
+        return False
+    
+    mean_distance = sum(measurements) / len(measurements)
+    distance_diff = abs(dist - mean_distance)
+    return distance_diff > THRESHOLD or len(measurements) >= 240
+
 
 def measure_and_publish():
-    temperature_in_C = mcp.get_temp()
-    temperature = (temperature_in_C * 9/5) + 32
-    print(f'Temp in F: {temperature}')
-    lastTempData.append(temperature)
+    distance = hcsr.distance_cm()
+    print(distance)
 
-    if len(lastTempData) >= 20:
-        meanTemperature = get_mean_temp()
-        publish_mqtt(MQTT_TOPIC, str(meanTemperature))
-        lastTempData.clear()
+    if should_publish(distance):
+        message = f"{distance:.2f}"
+        measurements.clear()
+        publish_mqtt(MQTT_TOPIC, message)
 
+    measurements.append(distance)
 
+    
 def restart():
+    network.WLAN().active(False)
     print('Restart in 60 seconds')
-    time.sleep(60)
+    sleep(60)
     print('Restarting Pico')
     led.value(0)
     sys.exit()
 
 try:
     if not initialize_wifi(config.wifi_ssid, config.wifi_password):
-        print('Error connecting to WiFi... exiting program')
-        led.value(1)
+        print('Error connecting to the network. exiting program')
         restart()
     else:
         client = connect_mqtt()
         while True:
             measure_and_publish()
-            time.sleep(3)
-
+            sleep(1)
+            
 except Exception as e:
-    led.value(1)
     print('Error:', e)
     restart()
+    
+
+
 
 
