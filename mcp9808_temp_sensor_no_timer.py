@@ -11,13 +11,13 @@ MQTT_SERVER = config.mqtt_server
 MQTT_PORT = 0
 MQTT_USER = config.mqtt_username
 MQTT_PASSWORD = config.mqtt_password
-MQTT_CLIENT_ID = b"raspberrypi_picow"
+MQTT_CLIENT_ID = b"raspberrypi_pico"
 MQTT_KEEPALIVE = 7200
 MQTT_SSL = False   # set to False if using local MQTT broker
 MQTT_SSL_PARAMS = {'server_hostname': MQTT_SERVER}
 
-MQTT_TOPIC = 'esp8266_DHT'
-PROBE_ID = 'probe_3'
+MQTT_TOPIC = config.mqtt_topic
+PROBE_ID = config.probe_id
 
 led = Pin("LED", Pin.OUT)
 
@@ -121,5 +121,7 @@ except Exception as e:
     led.value(1)
     print('Error:', e)
     restart()
+
+
 
 
