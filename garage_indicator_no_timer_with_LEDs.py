@@ -48,7 +48,7 @@ def initialize_wifi(ssid, password):
     wlan.active(True)
     
     onboard_led.value(1)
-    active_led.value(1)
+    active_led.value(0)
 
     # Connect to the network
     wlan.connect(ssid, password)
@@ -70,7 +70,7 @@ def initialize_wifi(ssid, password):
         network_info = wlan.ifconfig()
         print('IP address:', network_info[0])
         onboard_led.value(0)
-        active_led.value(0)
+        active_led.value(1)
         return True
     
 def connect_mqtt():
@@ -122,20 +122,20 @@ def set_open_led(distance):
     if OPEN_RANGE_LOWER <= distance <= OPEN_RANGE_UPPER:
         if not open_led_on:
             reset_leds()
-            open_led.value(1)
+            open_led.value(0)
             open_led_on = True
             print('Garage is OPEN - Open LED ON')
     else:
         if open_led_on:
-            open_led.value(0)
+            open_led.value(1)
             open_led_on = False
             print('Garage is CLOSED - Open LED OFF')
 
 def reset_leds():
     global open_led_on, error_led_on, active_led_on
-    open_led.value(0)
-    error_led.value(0)
-    active_led.value(0)
+    open_led.value(1)
+    error_led.value(1)
+    active_led.value(1)
     onboard_led.value(0)
     open_led_on = False
     error_led_on = False
@@ -152,7 +152,7 @@ def check_last_message_timeout():
         print('current_time:', current_time)
         print('last_message_time:', last_message_time)
         print('No message received in the last', LAST_MESSAGE_TIMEOUT, 'seconds')
-        error_led.value(1)
+        error_led.value(0)
         error_led_on = True
 
 
@@ -164,15 +164,15 @@ def check_active_blink():
     current_time = time.time()
     time_since_last_blink = current_time - last_active_blink_time
     if active_led_on and time_since_last_blink >= TIME_BETWEEN_ACTIVE_BLINKS + ACTIVE_BLINK_TIME:
-        active_led.value(0)
+        active_led.value(1)
         active_led_on = False
         last_active_blink_time = current_time
     elif (current_time - last_active_blink_time) >= TIME_BETWEEN_ACTIVE_BLINKS:
-        active_led.value(1)
+        active_led.value(0)
         active_led_on = True        
 
 def restart():
-    error_led.value(1)
+    error_led.value(0)
     print('Restart in 60 seconds')
     network.WLAN().active(False)
     time.sleep(60)
