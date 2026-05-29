@@ -25,7 +25,7 @@ MQTT_SSL = False   # set to False if using local MQTT broker
 
 MQTT_TOPIC = 'garage_sensor'
 
-THRESHOLD = 10 # cm
+THRESHOLD = 5 # cm
 
 def initialize_wifi(ssid, password):
     wlan = network.WLAN(network.STA_IF)
@@ -78,6 +78,13 @@ def publish_mqtt(topic, value):
     print("Published")
 
 def should_publish(dist):
+    if not measurements:
+        return False
+    
+    last_distance = measurements[-1]
+    if abs(dist - last_distance) > 2 * THRESHOLD:
+        return True
+
     if len(measurements) < 5:
         return False
     

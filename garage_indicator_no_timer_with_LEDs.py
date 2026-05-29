@@ -194,7 +194,7 @@ try:
         print("subscribed")
         while True:
             client.check_msg()
-            check_active_blink()
+            # check_active_blink()
             check_last_message_timeout()
             
 except Exception as e:
