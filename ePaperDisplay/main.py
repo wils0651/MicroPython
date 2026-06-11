@@ -281,6 +281,16 @@ def _icon_storm(fb, x, y, c):
     fb.line(lx - 4, ly + 6, lx - 1, ly + 6, c)
     fb.line(lx - 1, ly + 6, lx - 5, ly + 12, c)
 
+def _draw_smiley(fb, x, y, c):
+    """32×32 smiley face. c is the face fill; features draw in the opposite color."""
+    cx, cy = x + 16, y + 16
+    d = 1 - c  # contrast color for features
+    fb.ellipse(cx, cy, 14, 14, c, True)          # filled face
+    fb.ellipse(cx - 5, cy - 4, 2, 2, d, True)   # left eye
+    fb.ellipse(cx + 5, cy - 4, 2, 2, d, True)   # right eye
+    fb.ellipse(cx, cy + 3, 7, 5, d, False, 12)  # smile (bottom arc only)
+
+
 _ICON_FN = {
     "Clear":    _icon_sun,
     "MClear":   _icon_sun,
@@ -345,6 +355,7 @@ def render(fb, temps, garage, weather, wifi_ok):
         icon_fn(fb, PAD, (HEADER_H - 32) // 2, WHITE)
         draw_text(fb, "{}F".format(current["temp"]),  PAD + 36, 10, scale=3, color=WHITE)
         draw_text(fb, wmo_desc(current["code"]),      PAD + 36, 38, scale=2, color=WHITE)
+        _draw_smiley(fb, PAD + 36 + 9 * 16, (HEADER_H - 32) // 2, WHITE)
 
     time_str = fmt_time(t)
     date_str = fmt_date(t)
