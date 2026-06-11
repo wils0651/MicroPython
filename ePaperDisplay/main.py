@@ -3,17 +3,17 @@ IoT e-paper dashboard for Waveshare 7.5" V2 + Raspberry Pi Pico 2W.
 
 Layout (800x480):
   ┌──────────────────────────────────────────────────────────┐
-  │  HOME DASHBOARD                   12:34   Thu Jun 1      │  (header, black)
+  │  ☀ 72F  Clear                     12:34   Thu Jun 1      │  (header, black)
   ├───────────────────────────┬──────────────────────────────┤
   │  TEMPERATURE              │  GARAGE                      │
   │  Living Room    72.3 F    │  Status:    CLOSED           │
   │  Outside        58.1 F    │  Distance:  186 cm           │
   │  ...                      │  Last:      2:30 PM          │
-  ├─────────────┬─────────────┬─────────────┬─────────────┬──┤
-  │  Mon        │  Tue        │  Wed        │  Thu        │Fr │  (weather)
-  │  85/62F     │  79/58F     │  72/51F     │  68/49F     │.. │
-  │  Clear      │  PCloudy    │  Rain       │  Showers    │.. │
-  ├─────────────┴─────────────┴─────────────┴─────────────┴──┤
+  ├──────────────────────┬────┴──┬──────────┬──────────┬─────┤
+  │  TODAY               │  Tue  │  Wed     │  Thu     │ Fri │  (weather, 240+140*4)
+  │  ☀ icon              │  icon │  icon    │  icon    │icon │
+  │  85/62F  30%         │ 79/58 │  72/51   │  68/49   │ ... │
+  ├──────────────────────┴───────┴──────────┴──────────┴─────┤
   │  Updated 12:34  ONLINE                                   │  (footer)
   └──────────────────────────────────────────────────────────┘
 
@@ -39,10 +39,12 @@ WHITE = 0
 BLACK = 1
 
 HEADER_H  = 70
-WEATHER_Y = H - 170     # 310 — top of 5-day forecast strip (120 px tall)
-FOOTER_Y  = H - 50      # 430 — footer divider
-MID_X     = W // 2       # 400 — vertical centre divider
-PAD       = 14           # inner padding
+WEATHER_Y    = H - 170                       # 310 — top of 5-day forecast strip (120 px tall)
+FOOTER_Y     = H - 50                        # 430 — footer divider
+MID_X        = W // 2                        # 400 — vertical centre divider
+PAD          = 14                            # inner padding
+TODAY_COL_W  = 240                           # today's column is wider
+DAY_COL_W    = (W - TODAY_COL_W) // 4       # remaining 4 columns = 140 px each
 
 DAYS   = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 MONTHS = ("", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -183,6 +185,7 @@ def fetch_weather():
     url = (
         "http://api.open-meteo.com/v1/forecast"
         "?latitude={}&longitude={}"
+        "&current=temperature_2m,weathercode"
         "&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_probability_max"
         "&temperature_unit=fahrenheit&timezone={}&forecast_days=5"
     ).format(
@@ -203,19 +206,24 @@ def parse_weather(raw):
     if raw is None:
         return None
     try:
+        cur = raw.get("current", {})
+        current = {
+            "temp": int(round(cur.get("temperature_2m", 0))),
+            "code": cur.get("weathercode", 0),
+        }
         d = raw["daily"]
         today_wd = local_time()[6]
         pp = d.get("precipitation_probability_max", [])
-        result = []
+        forecast = []
         for i in range(len(d["time"])):
-            result.append({
+            forecast.append({
                 "day":    DAYS[(today_wd + i) % 7],
                 "hi":     int(round(d["temperature_2m_max"][i])),
                 "lo":     int(round(d["temperature_2m_min"][i])),
                 "code":   d["weathercode"][i],
                 "precip": int(pp[i]) if i < len(pp) and pp[i] is not None else None,
             })
-        return result
+        return {"current": current, "forecast": forecast}
     except Exception:
         return None
 
@@ -290,44 +298,56 @@ _ICON_FN = {
 
 
 def draw_weather_strip(fb, forecast):
-    col_w = W // 5   # 160 px per day column
     if not forecast:
         draw_text(fb, "Weather unavailable", PAD, WEATHER_Y + 52, scale=2)
         return
     for i, day in enumerate(forecast[:5]):
-        cx = i * col_w
+        cx  = 0 if i == 0 else TODAY_COL_W + (i - 1) * DAY_COL_W
+        cw  = TODAY_COL_W if i == 0 else DAY_COL_W
+
         if i > 0:
             fb.vline(cx, WEATHER_Y, FOOTER_Y - WEATHER_Y, BLACK)
 
-        # 32×32 icon, centred horizontally in column
         icon_fn = _ICON_FN.get(wmo_desc(day["code"]), _icon_cloud)
-        icon_fn(fb, cx + (col_w - 32) // 2, WEATHER_Y + 6, BLACK)
 
-        day_str = day["day"]
-        draw_text(fb, day_str, cx + (col_w - len(day_str) * 16) // 2, WEATHER_Y + 42, scale=2)
+        if i == 0:
+            # filled "TODAY" bar across the top of the wide column
+            fb.fill_rect(cx, WEATHER_Y, cw, 24, BLACK)
+            draw_text(fb, "TODAY", cx + (cw - 5 * 16) // 2, WEATHER_Y + 4, scale=2, color=WHITE)
+        else:
+            day_str = day["day"]
+            draw_text(fb, day_str, cx + (cw - len(day_str) * 16) // 2, WEATHER_Y + 4, scale=2)
+
+        # icon aligned at the same vertical position in all columns
+        icon_fn(fb, cx + (cw - 32) // 2, WEATHER_Y + 28, BLACK)
 
         temp_str = "{}/{}F".format(day["hi"], day["lo"])
-        draw_text(fb, temp_str, cx + (col_w - len(temp_str) * 16) // 2, WEATHER_Y + 62, scale=2)
+        draw_text(fb, temp_str, cx + (cw - len(temp_str) * 16) // 2, WEATHER_Y + 64, scale=2)
 
         precip_str = "{}%".format(day["precip"]) if day["precip"] is not None else "-%"
-        draw_text(fb, precip_str, cx + (col_w - len(precip_str) * 16) // 2, WEATHER_Y + 82, scale=2)
+        draw_text(fb, precip_str, cx + (cw - len(precip_str) * 16) // 2, WEATHER_Y + 84, scale=2)
 
 
 # ── dashboard rendering ───────────────────────────────────────────────────────
 
-def render(fb, temps, garage, forecast, wifi_ok):
+def render(fb, temps, garage, weather, wifi_ok):
     fb.fill(WHITE)
 
-    t = local_time()
+    t        = local_time()
+    current  = weather["current"]  if weather else None
+    forecast = weather["forecast"] if weather else None
 
     # ── Header (filled black) ────────────────────────────────────────────
     fb.fill_rect(0, 0, W, HEADER_H, BLACK)
 
-    draw_text(fb, "HOME DASHBOARD", PAD, 22, scale=3, color=WHITE)
+    if current:
+        icon_fn = _ICON_FN.get(wmo_desc(current["code"]), _icon_cloud)
+        icon_fn(fb, PAD, (HEADER_H - 32) // 2, WHITE)
+        draw_text(fb, "{}F".format(current["temp"]),  PAD + 36, 10, scale=3, color=WHITE)
+        draw_text(fb, wmo_desc(current["code"]),      PAD + 36, 38, scale=2, color=WHITE)
 
     time_str = fmt_time(t)
     date_str = fmt_date(t)
-    # Right-align time (scale=3) and date (scale=2) in the header
     tx = W - len(time_str) * 24 - PAD
     dx = W - len(date_str) * 16 - PAD
     draw_text(fb, time_str, tx, 12, scale=3, color=WHITE)
@@ -426,11 +446,11 @@ def main():
         if not network.WLAN(network.STA_IF).isconnected():
             wifi_ok = connect_wifi()
 
-        temps    = parse_temps(fetch_json(config.TEMP_ENDPOINT))    if wifi_ok else None
-        garage   = parse_garage(fetch_json(config.GARAGE_ENDPOINT)) if wifi_ok else None
-        forecast = parse_weather(fetch_weather())                    if wifi_ok else None
+        temps   = parse_temps(fetch_json(config.TEMP_ENDPOINT))    if wifi_ok else None
+        garage  = parse_garage(fetch_json(config.GARAGE_ENDPOINT)) if wifi_ok else None
+        weather = parse_weather(fetch_weather())                    if wifi_ok else None
 
-        render(fb, temps, garage, forecast, wifi_ok)
+        render(fb, temps, garage, weather, wifi_ok)
 
         epd.power_on()
         epd.init()
