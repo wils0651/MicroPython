@@ -4,3 +4,4 @@ libraries/
 ePaperDisplay/E-Paper_code.zip
 ePaperDisplay/e-Paper/
 *.bin
+esptool/esptool_notes.txt

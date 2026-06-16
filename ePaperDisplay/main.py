@@ -6,9 +6,11 @@ Layout (800x480):
   │  ☀ 72F  Clear                     12:34   Thu Jun 1      │  (header, black)
   ├───────────────────────────┬──────────────────────────────┤
   │  TEMPERATURE              │  GARAGE                      │
-  │  Living Room    72.3 F    │  Status:    CLOSED           │
-  │  Outside        58.1 F    │  Distance:  186 cm           │
-  │  ...                      │  Last:      2:30 PM          │
+  │  Garage         87.8 F    │  Status:    CLOSED           │
+  │  Basement Offic 69.8 F    │  Distance:  186 cm           │
+  │  Old Desk       80.4 F    │  Last:      2:30 PM          │
+  │  Cold Corner    79.7 F    │                              │
+  │  Pico Garage    87.8 F    │                              │
   ├──────────────────────┬────┴──┬──────────┬──────────┬─────┤
   │  TODAY               │  Tue  │  Wed     │  Thu     │ Fri │  (weather, 240+140*4)
   │  ☀ icon              │  icon │  icon    │  icon    │icon │
@@ -143,8 +145,19 @@ def parse_temps(raw):
         value = item.get("value") or item.get("temperature") or item.get("tempF")
         unit  = item.get("unit") or "F"
         if value is not None:
-            result.append({"name": str(name)[:14], "value": float(value), "unit": str(unit)})
+            result.append({"name": str(name)[:16], "value": float(value), "unit": str(unit)})
     return result or None
+
+
+def fetch_temps():
+    """Fetch all configured probe IDs and return a combined list for parse_temps."""
+    results = []
+    for pid in config.PROBE_IDS:
+        raw = fetch_json("/api/ProbeData/Latest/{}".format(pid))
+        parsed = parse_temps(raw)
+        if parsed:
+            results.extend(parsed)
+    return results or None
 
 
 def parse_garage(raw):
@@ -457,7 +470,7 @@ def main():
         if not network.WLAN(network.STA_IF).isconnected():
             wifi_ok = connect_wifi()
 
-        temps   = parse_temps(fetch_json(config.TEMP_ENDPOINT))    if wifi_ok else None
+        temps   = fetch_temps()                                      if wifi_ok else None
         garage  = parse_garage(fetch_json(config.GARAGE_ENDPOINT)) if wifi_ok else None
         weather = parse_weather(fetch_weather())                    if wifi_ok else None
 
