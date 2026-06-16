@@ -150,9 +150,15 @@ def parse_temps(raw):
 
 
 def fetch_temps():
-    """Fetch all configured probe IDs and return a combined list for parse_temps."""
+    """Discover probes from /api/Probe, then fetch latest reading for each."""
+    probes = fetch_json(config.PROBE_ENDPOINT)
+    if not probes or not isinstance(probes, list):
+        return None
     results = []
-    for pid in config.PROBE_IDS:
+    for probe in probes:
+        pid = probe.get("probeId")
+        if pid is None:
+            continue
         raw = fetch_json("/api/ProbeData/Latest/{}".format(pid))
         parsed = parse_temps(raw)
         if parsed:
