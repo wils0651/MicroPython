@@ -25,6 +25,7 @@ Upload order: epaper75.py, config.py, main.py (main.py runs on boot).
 import gc
 import time
 import framebuf
+import machine
 import network
 import ntptime
 import urequests
@@ -54,9 +55,16 @@ MONTHS = ("", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
 
 # ── time helpers ─────────────────────────────────────────────────────────────
 
+# Seconds to add to UTC to get local time. Seeded from config.TZ_OFFSET so the
+# first render (before any weather fetch succeeds) is still reasonable, then
+# kept in sync with Open-Meteo's utc_offset_seconds — which already accounts
+# for DST — every time parse_weather() runs.
+_tz_offset_s = config.TZ_OFFSET * 3600
+
+
 def local_time():
-    """Return time.localtime() adjusted by TZ_OFFSET."""
-    return time.localtime(time.time() + config.TZ_OFFSET * 3600)
+    """Return time.localtime() adjusted by the current UTC offset."""
+    return time.localtime(time.time() + _tz_offset_s)
 
 
 def fmt_time(t):
@@ -111,6 +119,31 @@ def connect_wifi(timeout_s=15):
 def sync_ntp():
     try:
         ntptime.settime()
+        return True
+    except Exception:
+        return False
+
+
+def sync_time_from_weather(raw):
+    """
+    Fallback clock sync using the weather API's "current.time" (local, DST-aware)
+    and "utc_offset_seconds". Used when NTP is unreachable — e.g. right after a
+    power cycle on a network that blocks outbound UDP/123 — since the Pico's RTC
+    has no battery backup and resets to a bogus default on power loss.
+    Only minute-accurate (Open-Meteo's current interval is 15 min), but good
+    enough to repair a wrong date/time until NTP can sync.
+    """
+    if raw is None:
+        return False
+    try:
+        date_part, time_part = raw["current"]["time"].split("T")
+        year, month, day = [int(x) for x in date_part.split("-")]
+        hour, minute = [int(x) for x in time_part.split(":")]
+        offset_s = raw["utc_offset_seconds"]
+
+        local_epoch = time.mktime((year, month, day, hour, minute, 0, 0, 0))
+        tm = time.gmtime(local_epoch - offset_s)
+        machine.RTC().datetime((tm[0], tm[1], tm[2], tm[6] + 1, tm[3], tm[4], tm[5], 0))
         return True
     except Exception:
         return False
@@ -224,7 +257,10 @@ def fetch_weather():
 def parse_weather(raw):
     if raw is None:
         return None
+    global _tz_offset_s
     try:
+        if "utc_offset_seconds" in raw:
+            _tz_offset_s = raw["utc_offset_seconds"]
         cur = raw.get("current", {})
         current = {
             "temp": int(round(cur.get("temperature_2m", 0))),
@@ -466,8 +502,7 @@ def main():
     epd.power_off()
 
     wifi_ok = connect_wifi()
-    if wifi_ok:
-        sync_ntp()
+    time_ok = sync_ntp() if wifi_ok else False
 
     while True:
         gc.collect()
@@ -476,9 +511,17 @@ def main():
         if not network.WLAN(network.STA_IF).isconnected():
             wifi_ok = connect_wifi()
 
-        temps   = fetch_temps()                                      if wifi_ok else None
-        garage  = parse_garage(fetch_json(config.GARAGE_ENDPOINT)) if wifi_ok else None
-        weather = parse_weather(fetch_weather())                    if wifi_ok else None
+        temps      = fetch_temps()                                    if wifi_ok else None
+        garage     = parse_garage(fetch_json(config.GARAGE_ENDPOINT)) if wifi_ok else None
+        weather_raw = fetch_weather()                                 if wifi_ok else None
+
+        # NTP is preferred (second-accurate); fall back to the weather API's
+        # embedded local timestamp if NTP hasn't succeeded yet (e.g. blocked
+        # after a power cycle). Keep retrying until one of them sticks.
+        if wifi_ok and not time_ok:
+            time_ok = sync_ntp() or sync_time_from_weather(weather_raw)
+
+        weather = parse_weather(weather_raw)
 
         render(fb, temps, garage, weather, wifi_ok)
 
