@@ -286,7 +286,7 @@ def parse_weather(raw):
 # ── weather icons (32×32, requires MicroPython ≥1.20 for fb.ellipse) ─────────
 
 def _draw_cloud(fb, x, y, c):
-    """24×14 cloud shape anchored at (x, y) top-left."""
+    """24x14 cloud shape anchored at (x, y) top-left."""
     fb.ellipse(x + 5,  y + 9, 5, 4, c, True)
     fb.ellipse(x + 12, y + 5, 6, 6, c, True)
     fb.ellipse(x + 19, y + 9, 5, 4, c, True)
@@ -337,7 +337,7 @@ def _icon_storm(fb, x, y, c):
     fb.line(lx - 1, ly + 6, lx - 5, ly + 12, c)
 
 def _draw_smiley(fb, x, y, c):
-    """32×32 smiley face. c is the face fill; features draw in the opposite color."""
+    """32x32 smiley face. c is the face fill; features draw in the opposite color."""
     cx, cy = x + 16, y + 16
     d = 1 - c  # contrast color for features
     fb.ellipse(cx, cy, 14, 14, c, True)          # filled face
@@ -432,14 +432,14 @@ def render(fb, temps, garage, weather, wifi_ok):
 
     row_y = sec_y + 28
     if temps:
-        for probe in temps[:5]:           # max 5 readings fit the shortened panel
+        for probe in temps[:6]:           # max 6 readings fit the shortened panel
             name    = probe["name"]
             reading = "{:.1f} {}".format(probe["value"], probe["unit"])
             draw_text(fb, name, PAD, row_y, scale=2)
             # Right-align the reading within the left panel
             rx = MID_X - len(reading) * 16 - PAD
             draw_text(fb, reading, rx, row_y, scale=2)
-            row_y += 40
+            row_y += 30
     else:
         draw_text(fb, "No data", PAD, row_y, scale=2)
 
@@ -449,21 +449,16 @@ def render(fb, temps, garage, weather, wifi_ok):
     fb.hline(lx, sec_y + 18, MID_X - PAD * 2, BLACK)
 
     row_y = sec_y + 28
-    val_x = lx + 10 * 16   # value column: label width (max 9 chars) + gap
 
     if garage:
         rows = [
             ("Status:", garage["status"]),
         ]
-        if garage["distance"] is not None:
-            rows.append(("Distance:", "{:.0f} cm".format(float(garage["distance"]))))
-        if garage["last_event"]:
-            rows.append(("Last:", garage["last_event"][:14]))
 
         for label, value in rows:
             draw_text(fb, label, lx, row_y, scale=2)
-            draw_text(fb, value, val_x, row_y, scale=2)
-            row_y += 40
+            row_y += 25
+            draw_text(fb, value, lx, row_y, scale=2)
     else:
         draw_text(fb, "No data", lx, row_y, scale=2)
 
