@@ -489,15 +489,17 @@ def main():
     img_buf = bytearray(W * H // 8)   # 48 000 bytes
     fb = framebuf.FrameBuffer(img_buf, W, H, framebuf.MONO_HLSB)
 
-    # Initial clear: power on → init → clear → sleep → power off
+    # Initial full refresh: power on → init → clear → draw first frame.
+    # The panel stays powered after this (see loop below) so its RAM keeps
+    # holding an image for partial-refresh diffing.
     epd.power_on()
     epd.init()
     epd.clear()
-    epd.sleep()
-    epd.power_off()
 
     wifi_ok = connect_wifi()
     time_ok = sync_ntp() if wifi_ok else False
+
+    refresh_count = 0
 
     while True:
         gc.collect()
@@ -520,11 +522,16 @@ def main():
 
         render(fb, temps, garage, weather, wifi_ok)
 
-        epd.power_on()
-        epd.init()
-        epd.display(img_buf)
-        epd.sleep()
-        epd.power_off()
+        # Most updates use the partial waveform (no flash). Periodically fall
+        # back to a full flash refresh to clear ghosting/DC imbalance that
+        # partial updates accumulate over time.
+        if refresh_count % config.FULL_REFRESH_EVERY == 0:
+            epd.init()
+            epd.display(img_buf)
+        else:
+            epd.init_part()
+            epd.display_partial(img_buf)
+        refresh_count += 1
 
         gc.collect()
         time.sleep(config.UPDATE_INTERVAL)

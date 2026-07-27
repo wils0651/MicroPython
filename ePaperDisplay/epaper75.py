@@ -94,6 +94,61 @@ class EPaper75:
         self._cmd(0x50); self._data([0x10, 0x07])   # VCOM and data interval
         self._cmd(0x60); self._data(0x22)           # TCON setting
 
+    def init_part(self):
+        """
+        Lightweight init for partial (non-flashing) updates.
+        Only valid while the panel is already powered and its RAM holds a
+        previous image (from init()+display()/clear() or a prior
+        display_partial() call) — do not call this after sleep()/power_off(),
+        which wipe that RAM; use init() to recover from those instead.
+        """
+        self.reset()
+        self._cmd(0x00); self._data(0x1F)           # Panel setting: KW mode
+        self._cmd(0x04)                             # Power on
+        time.sleep_ms(100)
+        self._wait_busy()
+
+    def display_partial(self, buf):
+        """
+        Push a full-frame update using the partial-refresh waveform: it
+        transitions directly from the previous image to this one, with no
+        black/white flash cycles. Ghosting/DC-imbalance accumulates over many
+        partial updates — call init()+display() periodically (see
+        config.FULL_REFRESH_EVERY in main.py) to reset it with a full flash.
+        """
+        self._cmd(0x50)
+        self._data([0xA9, 0x07])                    # VCOM setting for partial mode
+
+        self._cmd(0x91)                             # enter partial mode
+        self._cmd(0x90)                              # partial window = full screen
+        self._data([
+            0x00, 0x00,                                             # x-start = 0
+            (self.WIDTH - 1) >> 8, (self.WIDTH - 1) & 0xFF,          # x-end = 799
+            0x00, 0x00,                                             # y-start = 0
+            (self.HEIGHT - 1) >> 8, (self.HEIGHT - 1) & 0xFF,        # y-end = 479
+            0x01,
+        ])
+
+        # Channel 0x13 expects the inverted image in partial mode (unlike a
+        # full refresh, where 0x13 takes the raw buffer and only 0x10 —
+        # unused here — is inverted).
+        self._cmd(0x13)
+        self.dc.value(1)
+        self.cs.value(0)
+        mv = memoryview(buf)
+        inv = bytearray(512)
+        for i in range(0, len(mv), 512):
+            chunk = mv[i:i + 512]
+            sz = len(chunk)
+            for j in range(sz):
+                inv[j] = chunk[j] ^ 0xFF
+            self.spi.write(inv if sz == 512 else inv[:sz])
+        self.cs.value(1)
+
+        self._cmd(0x12)
+        time.sleep_ms(100)
+        self._wait_busy()
+
     def display(self, buf):
         """
         Push a 48000-byte image buffer and trigger a full refresh (~3–5 s).
