@@ -505,7 +505,7 @@ def main():
 
     # ticks_ms()/ticks_diff() are monotonic and unaffected by RTC changes,
     # so a mid-loop NTP correction can't throw off these interval checks.
-    last_data_fetch = None
+    last_weather_fetch = None
     last_ntp_sync = time.ticks_ms()
 
     while True:
@@ -517,15 +517,18 @@ def main():
 
         now = time.ticks_ms()
 
-        # Refresh sensor/weather data on its own (slower) cadence — no need
-        # to hit the API every time the on-screen clock ticks.
-        if last_data_fetch is None or \
-                time.ticks_diff(now, last_data_fetch) >= config.DATA_UPDATE_INTERVAL * 1000:
-            temps       = fetch_temps()                                    if wifi_ok else None
-            garage      = parse_garage(fetch_json(config.GARAGE_ENDPOINT)) if wifi_ok else None
-            weather_raw = fetch_weather()                                  if wifi_ok else None
+        # Temps and garage status are cheap, single-purpose endpoints —
+        # refresh them every tick (TIME_UPDATE_INTERVAL).
+        temps  = fetch_temps()                                    if wifi_ok else None
+        garage = parse_garage(fetch_json(config.GARAGE_ENDPOINT)) if wifi_ok else None
+
+        # Weather changes more slowly and Open-Meteo has its own rate limit,
+        # so keep it on a slower, separate cadence.
+        if last_weather_fetch is None or \
+                time.ticks_diff(now, last_weather_fetch) >= config.WEATHER_UPDATE_INTERVAL * 1000:
+            weather_raw = fetch_weather() if wifi_ok else None
             weather     = parse_weather(weather_raw)
-            last_data_fetch = now
+            last_weather_fetch = now
 
         # NTP is preferred (second-accurate); fall back to the weather API's
         # embedded local timestamp if NTP hasn't succeeded yet (e.g. blocked
