@@ -500,6 +500,13 @@ def main():
     time_ok = sync_ntp() if wifi_ok else False
 
     refresh_count = 0
+    temps = garage = weather = None
+    weather_raw = None
+
+    # ticks_ms()/ticks_diff() are monotonic and unaffected by RTC changes,
+    # so a mid-loop NTP correction can't throw off these interval checks.
+    last_data_fetch = None
+    last_ntp_sync = time.ticks_ms()
 
     while True:
         gc.collect()
@@ -508,17 +515,31 @@ def main():
         if not network.WLAN(network.STA_IF).isconnected():
             wifi_ok = connect_wifi()
 
-        temps      = fetch_temps()                                    if wifi_ok else None
-        garage     = parse_garage(fetch_json(config.GARAGE_ENDPOINT)) if wifi_ok else None
-        weather_raw = fetch_weather()                                 if wifi_ok else None
+        now = time.ticks_ms()
+
+        # Refresh sensor/weather data on its own (slower) cadence — no need
+        # to hit the API every time the on-screen clock ticks.
+        if last_data_fetch is None or \
+                time.ticks_diff(now, last_data_fetch) >= config.DATA_UPDATE_INTERVAL * 1000:
+            temps       = fetch_temps()                                    if wifi_ok else None
+            garage      = parse_garage(fetch_json(config.GARAGE_ENDPOINT)) if wifi_ok else None
+            weather_raw = fetch_weather()                                  if wifi_ok else None
+            weather     = parse_weather(weather_raw)
+            last_data_fetch = now
 
         # NTP is preferred (second-accurate); fall back to the weather API's
         # embedded local timestamp if NTP hasn't succeeded yet (e.g. blocked
-        # after a power cycle). Keep retrying until one of them sticks.
+        # after a power cycle). Keep retrying every tick until one sticks.
         if wifi_ok and not time_ok:
             time_ok = sync_ntp() or sync_time_from_weather(weather_raw)
-
-        weather = parse_weather(weather_raw)
+            if time_ok:
+                last_ntp_sync = now
+        # Once time is established, periodically resync via NTP anyway to
+        # correct for RTC crystal drift over long uptimes (the Pico never
+        # resyncs on its own after the first success otherwise).
+        elif wifi_ok and time.ticks_diff(now, last_ntp_sync) >= config.NTP_RESYNC_INTERVAL * 1000:
+            sync_ntp()
+            last_ntp_sync = now
 
         render(fb, temps, garage, weather, wifi_ok)
 
@@ -534,7 +555,7 @@ def main():
         refresh_count += 1
 
         gc.collect()
-        time.sleep(config.UPDATE_INTERVAL)
+        time.sleep(config.TIME_UPDATE_INTERVAL)
 
 
 main()
