@@ -16,7 +16,7 @@ MQTT_SERVER = config.mqtt_server
 MQTT_PORT = 0
 MQTT_USER = config.mqtt_username
 MQTT_PASSWORD = config.mqtt_password
-MQTT_CLIENT_ID = b"garage_picow"
+MQTT_CLIENT_ID = b"garage_picow_indicator"
 MQTT_KEEPALIVE = 7200
 MQTT_SSL = False   # set to False if using local MQTT broker
 
